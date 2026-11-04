@@ -1,0 +1,38 @@
+# Active environment configuration (contains org/project-specific IDs)
+config/project_config.env
+
+# Terraform artifacts & generated variable files
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+infra/terraform/backend.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Python & uv artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# macOS / IDE
+.DS_Store
+.idea/
+.vscode/
