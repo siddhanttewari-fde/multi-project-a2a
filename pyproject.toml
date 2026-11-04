@@ -1,0 +1,51 @@
+[project]
+name = "multi-project-agent"
+version = "0.1.0"
+description = "3-Project Enterprise A2A Governance with Google ADK, Agent Gateway, Agent Registry, and Terraform on Argolis"
+readme = "GEMINI.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "google-adk[a2a,agent-identity,gcp]>=1.29.0",
+    "google-auth>=2.38.0",
+    "google-cloud-aiplatform>=1.129.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "uvicorn>=0.34.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff==0.16.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agents"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = ["_agents"]
+
+[tool.ruff.lint]
+select = [
+    "B",
+    "E",
+    "F",
+    "I",
+    "PLC0415",
+    "SIM",
+    "TID251",
+    "UP",
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__.annotations".msg = "Do not use `from __future__ import annotations`; use native Python 3.12 runtime typing."
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
