@@ -64,18 +64,6 @@ echo "    Project 3 (Gateway Hub): ${GATEWAY_PROJECT_ID} (${GATEWAY_PROJECT_NUMB
 echo "    Project 1 (Agent A):     ${AGENT_A_PROJECT_ID} (${AGENT_A_PROJECT_NUMBER})"
 echo "    Project 2 (Agent B):     ${AGENT_B_PROJECT_ID} (${AGENT_B_PROJECT_NUMBER})"
 
-if [[ -z "${VPC_SC_POLICY_ID:-}" ]]; then
-  echo "==> Auto-detecting Access Context Manager (VPC-SC) Policy ID for Org ${ORG_ID}..."
-  VPC_SC_POLICY_ID="$(gcloud access-context-manager policies list \
-    --organization="${ORG_ID}" \
-    --format="value(name.basename())" | head -n 1)"
-  if [[ -z "${VPC_SC_POLICY_ID}" ]]; then
-    echo "ERROR: Could not auto-detect VPC_SC_POLICY_ID for Org ${ORG_ID}. Set it explicitly in ${CONFIG_FILE}." >&2
-    exit 1
-  fi
-fi
-echo "    VPC-SC Policy ID:        ${VPC_SC_POLICY_ID}"
-
 ALL_PROJECTS=(
   "${GATEWAY_PROJECT_ID}"
   "${AGENT_A_PROJECT_ID}"
@@ -108,11 +96,28 @@ for proj in "${ALL_PROJECTS[@]}"; do
   gcloud services enable "${BOOTSTRAP_APIS[@]}" --project="${proj}" --quiet
 done
 
-echo "==> [3/6] Resetting Argolis Org Policy 'iam.managed.disableAccessPolicyBindings' across all 3 projects..."
+if [[ -z "${VPC_SC_POLICY_ID:-}" ]]; then
+  echo "==> Auto-detecting Access Context Manager (VPC-SC) Policy ID for Org ${ORG_ID}..."
+  VPC_SC_POLICY_ID="$(CLOUDSDK_BILLING_PROJECT="${GATEWAY_PROJECT_ID}" gcloud access-context-manager policies list \
+    --organization="${ORG_ID}" \
+    --format="value(name.basename())" | head -n 1)"
+  if [[ -z "${VPC_SC_POLICY_ID}" ]]; then
+    echo "    No existing Access Context Manager policy found for Org ${ORG_ID}; creating default org policy..."
+    CLOUDSDK_BILLING_PROJECT="${GATEWAY_PROJECT_ID}" gcloud access-context-manager policies create \
+      --organization="${ORG_ID}" \
+      --title="Default Org Access Policy" --quiet
+    VPC_SC_POLICY_ID="$(CLOUDSDK_BILLING_PROJECT="${GATEWAY_PROJECT_ID}" gcloud access-context-manager policies list \
+      --organization="${ORG_ID}" \
+      --format="value(name.basename())" | head -n 1)"
+  fi
+fi
+echo "    VPC-SC Policy ID:        ${VPC_SC_POLICY_ID}"
+
+echo "==> [3/6] Resetting Argolis Org Policy 'iam.managed.disableAccessPolicyBindings' (if present)..."
 for proj in "${ALL_PROJECTS[@]}"; do
-  echo "    Resetting constraint on ${proj}..."
-  gcloud org-policies reset constraints/iam.managed.disableAccessPolicyBindings \
-    --project="${proj}" --quiet || true
+  CLOUDSDK_BILLING_PROJECT="${GATEWAY_PROJECT_ID}" gcloud org-policies reset \
+    constraints/iam.managed.disableAccessPolicyBindings \
+    --project="${proj}" --quiet 2>/dev/null || true
 done
 
 TF_STATE_BUCKET="${GATEWAY_PROJECT_ID}-tfstate"
