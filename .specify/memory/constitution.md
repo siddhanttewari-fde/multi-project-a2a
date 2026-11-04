@@ -60,7 +60,7 @@ All Python files in `agents/` and `tests/` MUST strictly follow [`_agents/skills
 
 ## 4. Phase Completion, Git Commit & PR Approval Gate
 
-1. **Mandatory Commit After Each Phase**:
-   * Upon completing any phase in [`.specify/memory/plan.md`](plan.md) and passing all verification gates (`uv run ruff check .`, `uv run ruff format --check .`, and phase-specific CLI/unit tests), all changes for that phase MUST be staged and committed to Git with a descriptive commit message.
-2. **Explicit Approval Before Raising a PR**:
+1. **Mandatory check After Each Phase**:
+   * Upon completing any phase in [`.specify/memory/plan.md`](plan.md) and passing all verification gates (`uv run ruff check .`, `uv run ruff format --check .`, and phase-specific CLI/unit tests), all changes for that phase MUST be staged to Git.
+2. **Explicit Approval Before committing and Raising a PR**:
    * Immediately after committing a phase's changes, STOP and ask the user for explicit approval to push / raise a Pull Request (PR) for that phase before proceeding.
