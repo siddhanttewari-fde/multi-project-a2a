@@ -79,16 +79,13 @@ multi_project_agent/
 │           └── a2a_governance/          # Agent B Registry entry in Project 3 + Agent A SPIFFE IAM bindings
 ├── agents/
 │   ├── shared/
-│   │   ├── __init__.py
 │   │   ├── config.py                    # Centralized Settings (no scattered os.getenv)
 │   │   └── utils.py                     # GoogleAdcBearerAuth, health response, logging helpers
 │   ├── coordinator_agent/               # Agent A (Deployed to Project 1)
-│   │   ├── __init__.py
 │   │   ├── agent.py                     # Root ADK Agent + RemoteA2aAgent sub-agent
 │   │   ├── server.py                    # create_app() FastAPI factory (A2A + Reasoning Engine routes)
 │   │   └── Dockerfile                   # Trusts AGENT_GATEWAY_ROOT_CERTIFICATES from Project 3
 │   └── specialist_agent/                # Agent B (Deployed to Project 2)
-│       ├── __init__.py
 │       ├── agent.py                     # Root ADK Agent + deterministic status tool
 │       ├── server.py                    # create_app() FastAPI factory (A2A + Reasoning Engine routes)
 │       └── Dockerfile                   # Trusts AGENT_GATEWAY_ROOT_CERTIFICATES from Project 3
