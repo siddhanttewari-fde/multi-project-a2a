@@ -1,0 +1,27 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ],
+  "basedpyright.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ],
+  "python.analysis.indexing": true,
+  "python.analysis.packageIndexDepths": [
+    {
+      "name": "google",
+      "depth": 5,
+      "includeAllSymbols": true
+    },
+    {
+      "name": "a2a",
+      "depth": 4,
+      "includeAllSymbols": true
+    },
+    {
+      "name": "fastapi",
+      "depth": 3,
+      "includeAllSymbols": true
+    }
+  ]
+}
