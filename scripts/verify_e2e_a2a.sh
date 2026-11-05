@@ -47,28 +47,45 @@ assert "Coordinator Agent A" in names, f"Coordinator Agent A missing from regist
 print("    Registered Agents:", ", ".join(names))
 '
 
-echo "==> [2/4] Testing Specialist Agent B in Project 2 (${AGENT_B_PROJECT_ID}, Engine ${ENGINE_B_ID})..."
-RESP_B="$(curl -sSf -X POST \
+echo "==> [2/4] Testing Specialist Agent B HMAC Verification in Project 2 (${AGENT_B_PROJECT_ID}, Engine ${ENGINE_B_ID})..."
+BODY_B='{"jsonrpc":"2.0","id":"verify-b","method":"message/send","params":{"message":{"messageId":"msg-verify-b","role":"user","parts":[{"kind":"text","text":"What is the status of ticket TKT-101?"}]}}}'
+
+UNSIGNED_CODE="$(curl -s -o /dev/null -w "%{http_code}" -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   "${AGENT_B_A2A_URL}" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "verify-b",
-    "method": "message/send",
-    "params": {
-      "message": {
-        "messageId": "msg-verify-b",
-        "role": "user",
-        "parts": [{"kind": "text", "text": "What is the status of ticket TKT-101?"}]
-      }
-    }
-  }')"
+  -d "${BODY_B}")"
+echo "    Unsigned direct call to Specialist Agent B HTTP status: ${UNSIGNED_CODE} (expected 401)"
+if [[ "${UNSIGNED_CODE}" != "401" ]]; then
+  echo "ERROR: Expected 401 for unsigned direct call to Specialist Agent B, got ${UNSIGNED_CODE}" >&2
+  exit 1
+fi
+
+HMAC_HEADERS="$(python3 -c '
+import hashlib, hmac, sys, time, uuid
+org_id, gw_proj, a_proj, b_proj, body = sys.argv[1:6]
+secret = hashlib.sha256(f"{org_id}:{gw_proj}:{a_proj}:{b_proj}:a2a-gateway-hmac".encode()).hexdigest()
+ts = str(int(time.time()))
+nonce = uuid.uuid4().hex
+body_digest = hashlib.sha256(body.encode()).hexdigest()
+sig = hmac.new(secret.encode(), f"{ts}.{nonce}.{body_digest}".encode(), hashlib.sha256).hexdigest()
+print(f"{ts} {nonce} {sig}")
+' "${ORG_ID}" "${GATEWAY_PROJECT_ID}" "${AGENT_A_PROJECT_ID}" "${AGENT_B_PROJECT_ID}" "${BODY_B}")"
+read -r HMAC_TS HMAC_NONCE HMAC_SIG <<< "${HMAC_HEADERS}"
+
+RESP_B="$(curl -sSf -X POST \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "X-A2A-Timestamp: ${HMAC_TS}" \
+  -H "X-A2A-Nonce: ${HMAC_NONCE}" \
+  -H "X-A2A-Signature: ${HMAC_SIG}" \
+  "${AGENT_B_A2A_URL}" \
+  -d "${BODY_B}")"
 echo "${RESP_B}" | python3 -c '
 import json, sys
 raw = sys.stdin.read()
 assert "APPROVED_IN_PROJECT_B" in raw, f"Expected APPROVED_IN_PROJECT_B in response: {raw}"
-print("    Specialist Agent B returned APPROVED_IN_PROJECT_B")
+print("    HMAC-signed call to Specialist Agent B returned APPROVED_IN_PROJECT_B")
 '
 
 echo "==> [3/4] Testing Cross-Project A2A Delegation from Coordinator Agent A in Project 1 (${AGENT_A_PROJECT_ID}, Engine ${ENGINE_A_ID})..."

@@ -11,6 +11,9 @@ ADK_AGENT_EXECUTOR_EXTENSION_URI = (
     "https://google.github.io/adk-docs/a2a/a2a-extension/"
 )
 CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+A2A_HMAC_TIMESTAMP_HEADER = "X-A2A-Timestamp"
+A2A_HMAC_NONCE_HEADER = "X-A2A-Nonce"
+A2A_HMAC_SIGNATURE_HEADER = "X-A2A-Signature"
 
 
 class Settings(BaseSettings):
@@ -69,6 +72,11 @@ class Settings(BaseSettings):
     allow_origins_raw: str = Field(default="", alias="ALLOW_ORIGINS")
     a2a_rpc_path: str = Field(default="/a2a/app", alias="A2A_RPC_PATH")
     http_timeout_seconds: float = Field(default=60.0, alias="HTTP_TIMEOUT_SECONDS")
+    a2a_hmac_secret: str = Field(default="", alias="A2A_HMAC_SECRET")
+    a2a_hmac_ttl_seconds: int = Field(
+        default=300,
+        alias="A2A_HMAC_TTL_SECONDS",
+    )
 
 
 def _configure_tls_intercepted_env(cfg: Settings) -> Settings:

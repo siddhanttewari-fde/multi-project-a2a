@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
         description=SPECIALIST_DESCRIPTION,
         root_agent=root_agent,
         adk_app=adk_app,
+        require_a2a_hmac=True,
     )
 
 
