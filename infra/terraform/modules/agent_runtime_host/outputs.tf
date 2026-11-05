@@ -21,13 +21,18 @@ output "spiffe_principal" {
 output "a2a_endpoint_url" {
   description = "Standard HTTPS A2A passthrough endpoint URL for the Reasoning Engine."
   value = var.deploy_agent ? (
-    "https://${var.region}-aiplatform.googleapis.com/v1beta1/projects/${var.project_number}/locations/${var.region}/reasoningEngines/${local.engine_id}/api/a2a/app"
+    "https://${var.region}-aiplatform.googleapis.com/reasoningEngines/v1/projects/${var.project_number}/locations/${var.region}/reasoningEngines/${local.engine_id}/api/a2a/app"
   ) : ""
 }
 
 output "a2a_mtls_endpoint_url" {
   description = "mTLS HTTPS A2A passthrough endpoint URL for the Reasoning Engine."
   value = var.deploy_agent ? (
-    "https://${var.region}-aiplatform.mtls.googleapis.com/v1beta1/projects/${var.project_number}/locations/${var.region}/reasoningEngines/${local.engine_id}/api/a2a/app"
+    "https://${var.region}-aiplatform.mtls.googleapis.com/reasoningEngines/v1/projects/${var.project_number}/locations/${var.region}/reasoningEngines/${local.engine_id}/api/a2a/app"
   ) : ""
+}
+
+output "gateway_binding_id" {
+  description = "Completion token for the cross-project Central Egress Gateway binding."
+  value       = var.deploy_agent ? terraform_data.bind_central_egress_gateway[0].id : ""
 }

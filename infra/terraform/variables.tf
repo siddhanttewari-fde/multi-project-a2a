@@ -52,7 +52,7 @@ variable "vpc_sc_admin_user" {
 variable "gemini_model" {
   description = "Default Gemini model ID used by both ADK agents."
   type        = string
-  default     = "gemini-2.5-flash"
+  default     = "gemini-3.5-flash"
 }
 
 variable "remote_agent_b_id" {

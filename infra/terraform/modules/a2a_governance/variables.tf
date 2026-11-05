@@ -21,6 +21,11 @@ variable "gateway_project_id" {
   type        = string
 }
 
+variable "agent_a_project_id" {
+  description = "Project 1: Coordinator Agent A Host Project ID."
+  type        = string
+}
+
 variable "agent_b_project_id" {
   description = "Project 2: Specialist Agent B Host Project ID."
   type        = string
@@ -32,14 +37,43 @@ variable "deploy_agents" {
   default     = false
 }
 
+variable "custom_org_policy_constraint_name" {
+  description = "Name of the Custom Organization Policy constraint enforcing Central Egress Gateway binding."
+  type        = string
+}
+
 variable "agent_a_spiffe_principal" {
   description = "Deterministic SPIFFE IAM principal of Coordinator Agent A (Project 1)."
   type        = string
   default     = ""
 }
 
+variable "agent_a_a2a_url" {
+  description = "Standard HTTPS /api/a2a/app URL for Coordinator Agent A."
+  type        = string
+  default     = ""
+}
+
+variable "agent_a_a2a_mtls_url" {
+  description = "mTLS HTTPS /api/a2a/app URL for Coordinator Agent A."
+  type        = string
+  default     = ""
+}
+
+variable "agent_a_gateway_binding_id" {
+  description = "Completion token for Agent A's Central Egress Gateway binding."
+  type        = string
+  default     = ""
+}
+
 variable "agent_b_engine_id" {
   description = "Numeric Reasoning Engine ID of Specialist Agent B (Project 2)."
+  type        = string
+  default     = ""
+}
+
+variable "agent_b_spiffe_principal" {
+  description = "Deterministic SPIFFE IAM principal of Specialist Agent B (Project 2)."
   type        = string
   default     = ""
 }
@@ -52,6 +86,12 @@ variable "agent_b_a2a_url" {
 
 variable "agent_b_a2a_mtls_url" {
   description = "mTLS HTTPS /api/a2a/app URL for Specialist Agent B."
+  type        = string
+  default     = ""
+}
+
+variable "agent_b_gateway_binding_id" {
+  description = "Completion token for Agent B's Central Egress Gateway binding."
   type        = string
   default     = ""
 }

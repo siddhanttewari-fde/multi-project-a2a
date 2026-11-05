@@ -1,5 +1,6 @@
 """Centralized configuration for Coordinator Agent A and Specialist Agent B."""
 
+import os
 from pathlib import Path
 
 from pydantic import Field
@@ -25,7 +26,7 @@ class Settings(BaseSettings):
     app_version: str = Field(default="0.1.0", alias="AGENT_VERSION")
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8080, alias="PORT")
-    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-3.5-flash", alias="GEMINI_MODEL")
 
     google_genai_use_vertexai: bool = Field(
         default=True,
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
     )
     google_cloud_project: str = Field(default="", alias="GOOGLE_CLOUD_PROJECT")
     google_cloud_location: str = Field(
-        default="us-central1",
+        default="global",
         alias="GOOGLE_CLOUD_LOCATION",
     )
     google_cloud_agent_engine_id: str = Field(
@@ -47,6 +48,14 @@ class Settings(BaseSettings):
     google_cloud_agent_engine_enable_telemetry: str = Field(
         default="true",
         alias="GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY",
+    )
+    google_api_use_client_certificate: str = Field(
+        default="false",
+        alias="GOOGLE_API_USE_CLIENT_CERTIFICATE",
+    )
+    google_api_use_mtls_endpoint: str = Field(
+        default="never",
+        alias="GOOGLE_API_USE_MTLS_ENDPOINT",
     )
 
     gateway_project_id: str = Field(default="", alias="GATEWAY_PROJECT_ID")
@@ -62,4 +71,13 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = Field(default=60.0, alias="HTTP_TIMEOUT_SECONDS")
 
 
-settings = Settings()
+def _configure_tls_intercepted_env(cfg: Settings) -> Settings:
+    """Disable client-cert mTLS URL rewriting when traversing Central Egress Gateway."""
+    os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = (
+        cfg.google_api_use_client_certificate
+    )
+    os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = cfg.google_api_use_mtls_endpoint
+    return cfg
+
+
+settings = _configure_tls_intercepted_env(Settings())
