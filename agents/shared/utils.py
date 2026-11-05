@@ -2,10 +2,14 @@
 
 import contextlib
 import functools
+import hashlib
+import hmac
 import inspect
 import json
 import logging
-from collections.abc import AsyncIterator, Callable
+import time
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 import google.auth
@@ -19,7 +23,7 @@ from a2a.server.routes import (
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentExtension, AgentInterface
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from fastapi import FastAPI, HTTPException, Request, encoders, responses
+from fastapi import FastAPI, HTTPException, Request, Response, encoders, responses
 from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
 from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
 from google.adk.agents import BaseAgent
@@ -35,6 +39,9 @@ from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 from vertexai.agent_engines.templates.adk import AdkApp
 
 from agents.shared.config import (
+    A2A_HMAC_NONCE_HEADER,
+    A2A_HMAC_SIGNATURE_HEADER,
+    A2A_HMAC_TIMESTAMP_HEADER,
     ADK_AGENT_EXECUTOR_EXTENSION_URI,
     AGENTS_ROOT_DIR,
     CLOUD_PLATFORM_SCOPE,
@@ -42,8 +49,60 @@ from agents.shared.config import (
 )
 
 
+def compute_a2a_hmac_signature(
+    body: bytes,
+    secret: str,
+    timestamp: str,
+    nonce: str,
+) -> str:
+    """Compute an HMAC-SHA256 signature over timestamp, nonce, and body SHA-256."""
+    body_digest = hashlib.sha256(body).hexdigest()
+    canonical_message = f"{timestamp}.{nonce}.{body_digest}".encode()
+    return hmac.new(
+        secret.encode("utf-8"),
+        canonical_message,
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_a2a_hmac_signature(
+    body: bytes,
+    secret: str,
+    timestamp: str,
+    nonce: str,
+    signature: str,
+    *,
+    ttl_seconds: int | None = None,
+    now: int | None = None,
+) -> tuple[bool, str]:
+    """Verify an A2A request's HMAC-SHA256 signature and anti-replay timestamp."""
+    if not timestamp or not nonce or not signature:
+        return False, "Missing A2A HMAC signature headers"
+    try:
+        request_ts = int(timestamp)
+    except ValueError:
+        return False, "Invalid A2A HMAC timestamp format"
+
+    current_ts = int(time.time()) if now is None else now
+    allowed_drift = (
+        settings.a2a_hmac_ttl_seconds if ttl_seconds is None else ttl_seconds
+    )
+    if abs(current_ts - request_ts) > allowed_drift:
+        return False, "A2A request timestamp expired (replay blocked)"
+
+    expected_signature = compute_a2a_hmac_signature(
+        body=body,
+        secret=secret,
+        timestamp=timestamp,
+        nonce=nonce,
+    )
+    if not hmac.compare_digest(signature, expected_signature):
+        return False, "Invalid A2A HMAC signature"
+    return True, "ok"
+
+
 class GoogleAdcBearerAuth(httpx.Auth):
-    """Attaches a SPIFFE / Application Default Credentials OAuth 2.0 Bearer token."""
+    """Attaches a SPIFFE / ADC Bearer token and optional HMAC-SHA256 signature."""
 
     def __init__(self) -> None:
         self._credentials: Any = None
@@ -58,6 +117,19 @@ class GoogleAdcBearerAuth(httpx.Auth):
     def auth_flow(self, request: httpx.Request) -> Any:
         token = self._ensure_valid_token()
         request.headers["Authorization"] = f"Bearer {token}"
+        secret = settings.a2a_hmac_secret.strip()
+        if secret:
+            timestamp = str(int(time.time()))
+            nonce = uuid.uuid4().hex
+            signature = compute_a2a_hmac_signature(
+                body=request.content,
+                secret=secret,
+                timestamp=timestamp,
+                nonce=nonce,
+            )
+            request.headers[A2A_HMAC_TIMESTAMP_HEADER] = timestamp
+            request.headers[A2A_HMAC_NONCE_HEADER] = nonce
+            request.headers[A2A_HMAC_SIGNATURE_HEADER] = signature
         yield request
 
 
@@ -446,6 +518,52 @@ async def handle_health_check(request: Request) -> dict[str, str]:
     return build_health_response(service_name)
 
 
+async def verify_a2a_hmac_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Enforce HMAC-SHA256 verification on POST /a2a/app when a secret is set."""
+    require_hmac = getattr(request.app.state, "require_a2a_hmac", False)
+    secret = settings.a2a_hmac_secret.strip()
+    if (
+        require_hmac
+        and secret
+        and request.method == "POST"
+        and request.url.path.endswith(settings.a2a_rpc_path)
+    ):
+        service_name = getattr(request.app.state, "service_name", settings.app_name)
+        timestamp = request.headers.get(A2A_HMAC_TIMESTAMP_HEADER, "")
+        nonce = request.headers.get(A2A_HMAC_NONCE_HEADER, "")
+        signature = request.headers.get(A2A_HMAC_SIGNATURE_HEADER, "")
+        raw_body = await request.body()
+        is_valid, reason = verify_a2a_hmac_signature(
+            body=raw_body,
+            secret=secret,
+            timestamp=timestamp,
+            nonce=nonce,
+            signature=signature,
+        )
+        if not is_valid:
+            logger.warning(
+                "A2A_HMAC_REJECTED service=%s reason=%s timestamp=%s nonce=%s",
+                service_name,
+                reason,
+                timestamp,
+                nonce,
+            )
+            return responses.JSONResponse(
+                status_code=401,
+                content={"error": reason},
+            )
+        logger.info(
+            "A2A_HMAC_VERIFIED service=%s timestamp=%s nonce=%s",
+            service_name,
+            timestamp,
+            nonce,
+        )
+    return await call_next(request)
+
+
 def attach_reasoning_engine_routes(app: FastAPI) -> None:
     """Register canonical Reasoning Engine HTTP adapter routes on the FastAPI app."""
     app.add_api_route(
@@ -490,6 +608,7 @@ def create_agent_server_app(
     root_agent: BaseAgent,
     adk_app: App,
     agents_dir: str = AGENTS_ROOT_DIR,
+    require_a2a_hmac: bool = False,
 ) -> FastAPI:
     """Create a FastAPI server exposing ADK, A2A, Reasoning Engine, and /health."""
     app: FastAPI = get_fast_api_app(
@@ -505,6 +624,9 @@ def create_agent_server_app(
     app.state.root_agent = root_agent
     app.state.adk_app = adk_app
     app.state.reasoning_engine_bundle = None
+    app.state.require_a2a_hmac = require_a2a_hmac
+    if require_a2a_hmac:
+        app.middleware("http")(verify_a2a_hmac_middleware)
 
     app.router.routes = [
         route

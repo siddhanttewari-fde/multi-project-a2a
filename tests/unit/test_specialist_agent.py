@@ -1,7 +1,17 @@
 """Unit tests for Specialist Agent B tool, ADK agent definition, and FastAPI server."""
 
+import time
+from unittest.mock import MagicMock
+
 from fastapi.testclient import TestClient
 
+from agents.shared.config import (
+    A2A_HMAC_NONCE_HEADER,
+    A2A_HMAC_SIGNATURE_HEADER,
+    A2A_HMAC_TIMESTAMP_HEADER,
+    settings,
+)
+from agents.shared.utils import compute_a2a_hmac_signature
 from agents.specialist_agent.agent import (
     SPECIALIST_AGENT_NAME,
     SPECIALIST_APP_NAME,
@@ -59,3 +69,57 @@ def test_specialist_server_health_and_a2a_card() -> None:
             json={"class_method": "non_existent_method", "input": {}},
         )
         assert invalid_re_resp.status_code == 404
+
+
+def test_specialist_server_enforces_a2a_hmac_middleware(
+    monkeypatch: MagicMock,
+) -> None:
+    """Verify Specialist Agent B rejects unsigned or tampered POST /a2a/app calls."""
+    monkeypatch.setattr(settings, "a2a_hmac_secret", "shared-gateway-hmac-secret-256")
+    fastapi_app = create_app()
+    raw_payload = b'{"jsonrpc":"2.0","id":"1","method":"tasks/get","params":{"id":"x"}}'
+
+    with TestClient(fastapi_app) as client:
+        # 1. Unsigned direct request is blocked (401 Unauthorized)
+        unsigned_resp = client.post(
+            "/a2a/app",
+            content=raw_payload,
+            headers={"Content-Type": "application/json"},
+        )
+        assert unsigned_resp.status_code == 401
+        assert "Missing A2A HMAC signature headers" in unsigned_resp.json()["error"]
+
+        # 2. Tampered signature is blocked (401 Unauthorized)
+        now_ts = str(int(time.time()))
+        tampered_resp = client.post(
+            "/a2a/app",
+            content=raw_payload,
+            headers={
+                "Content-Type": "application/json",
+                A2A_HMAC_TIMESTAMP_HEADER: now_ts,
+                A2A_HMAC_NONCE_HEADER: "nonce-abc",
+                A2A_HMAC_SIGNATURE_HEADER: "0" * 64,
+            },
+        )
+        assert tampered_resp.status_code == 401
+        assert "Invalid A2A HMAC signature" in tampered_resp.json()["error"]
+
+        # 3. Valid HMAC-SHA256 signed request passes middleware (200 JSON-RPC response)
+        valid_sig = compute_a2a_hmac_signature(
+            body=raw_payload,
+            secret="shared-gateway-hmac-secret-256",
+            timestamp=now_ts,
+            nonce="nonce-abc",
+        )
+        signed_resp = client.post(
+            "/a2a/app",
+            content=raw_payload,
+            headers={
+                "Content-Type": "application/json",
+                A2A_HMAC_TIMESTAMP_HEADER: now_ts,
+                A2A_HMAC_NONCE_HEADER: "nonce-abc",
+                A2A_HMAC_SIGNATURE_HEADER: valid_sig,
+            },
+        )
+        assert signed_resp.status_code == 200
+        assert "jsonrpc" in signed_resp.json()

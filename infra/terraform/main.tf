@@ -68,6 +68,12 @@ module "central_gateway" {
   enforce_custom_org_policy = var.deploy_agents
 }
 
+locals {
+  a2a_hmac_secret = sha256(
+    "${var.org_id}:${var.gateway_project_id}:${var.agent_a_project_id}:${var.agent_b_project_id}:a2a-gateway-hmac"
+  )
+}
+
 # ------------------------------------------------------------------------------
 # 4. Project 2: Specialist Agent B Runtime Host (Artifact Registry + Reasoning Engine)
 # ------------------------------------------------------------------------------
@@ -88,6 +94,9 @@ module "agent_b_host" {
   image_tag                 = var.specialist_image_tag
   gemini_model              = var.gemini_model
   remote_agent_b_id         = var.remote_agent_b_id
+  extra_env_vars = {
+    A2A_HMAC_SECRET = local.a2a_hmac_secret
+  }
 }
 
 # ------------------------------------------------------------------------------
@@ -110,6 +119,9 @@ module "agent_a_host" {
   image_tag                 = var.coordinator_image_tag
   gemini_model              = var.gemini_model
   remote_agent_b_id         = var.remote_agent_b_id
+  extra_env_vars = {
+    A2A_HMAC_SECRET = local.a2a_hmac_secret
+  }
 }
 
 # ------------------------------------------------------------------------------

@@ -5,16 +5,24 @@ from unittest.mock import MagicMock, patch
 import httpx
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 
-from agents.shared.config import Settings, settings
+from agents.shared.config import (
+    A2A_HMAC_NONCE_HEADER,
+    A2A_HMAC_SIGNATURE_HEADER,
+    A2A_HMAC_TIMESTAMP_HEADER,
+    Settings,
+    settings,
+)
 from agents.shared.utils import (
     GoogleAdcBearerAuth,
     RegistryRemoteA2aAgent,
     build_health_response,
+    compute_a2a_hmac_signature,
     create_authenticated_httpx_client,
     get_allow_origins,
     is_telemetry_enabled,
     resolve_app_url,
     resolve_remote_a2a_agent,
+    verify_a2a_hmac_signature,
 )
 
 
@@ -147,3 +155,94 @@ def test_create_authenticated_httpx_client() -> None:
     client = create_authenticated_httpx_client()
     assert isinstance(client, httpx.AsyncClient)
     assert isinstance(client.auth, GoogleAdcBearerAuth)
+
+
+def test_compute_and_verify_a2a_hmac_signature() -> None:
+    """Verify HMAC-SHA256 signature verification, anti-replay, and tamper checks."""
+    body = b'{"jsonrpc":"2.0","id":"1","method":"message/send"}'
+    secret = "super-secret-gateway-hmac-key"
+    timestamp = "1762369200"
+    nonce = "nonce-12345"
+
+    sig = compute_a2a_hmac_signature(body, secret, timestamp, nonce)
+
+    ok, reason = verify_a2a_hmac_signature(
+        body=body,
+        secret=secret,
+        timestamp=timestamp,
+        nonce=nonce,
+        signature=sig,
+        ttl_seconds=300,
+        now=1762369300,
+    )
+    assert ok is True
+    assert reason == "ok"
+
+    expired_ok, expired_reason = verify_a2a_hmac_signature(
+        body=body,
+        secret=secret,
+        timestamp=timestamp,
+        nonce=nonce,
+        signature=sig,
+        ttl_seconds=300,
+        now=1762370000,
+    )
+    assert expired_ok is False
+    assert "expired" in expired_reason
+
+    tampered_ok, tampered_reason = verify_a2a_hmac_signature(
+        body=b'{"jsonrpc":"2.0","id":"1","method":"tampered"}',
+        secret=secret,
+        timestamp=timestamp,
+        nonce=nonce,
+        signature=sig,
+        ttl_seconds=300,
+        now=1762369300,
+    )
+    assert tampered_ok is False
+    assert "Invalid A2A HMAC signature" in tampered_reason
+
+    missing_ok, missing_reason = verify_a2a_hmac_signature(
+        body=body,
+        secret=secret,
+        timestamp="",
+        nonce=nonce,
+        signature=sig,
+    )
+    assert missing_ok is False
+    assert "Missing" in missing_reason
+
+
+def test_google_adc_bearer_auth_injects_hmac_headers_when_configured(
+    monkeypatch: MagicMock,
+) -> None:
+    """Verify GoogleAdcBearerAuth signs outbound calls when a2a_hmac_secret is set."""
+    monkeypatch.setattr(settings, "a2a_hmac_secret", "test-gateway-hmac-secret")
+    mock_creds = MagicMock()
+    mock_creds.valid = True
+    mock_creds.token = "spiffe-svid-oauth-token-456"
+
+    with patch(
+        "agents.shared.utils.google.auth.default",
+        return_value=(mock_creds, "argolis-training-project"),
+    ):
+        auth = GoogleAdcBearerAuth()
+        payload = b'{"jsonrpc":"2.0","id":"req-1","method":"message/send"}'
+        request = httpx.Request(
+            "POST",
+            "https://us-central1-aiplatform.googleapis.com/a2a/app",
+            content=payload,
+        )
+        authed_request = next(auth.auth_flow(request))
+
+        ts = authed_request.headers[A2A_HMAC_TIMESTAMP_HEADER]
+        nonce = authed_request.headers[A2A_HMAC_NONCE_HEADER]
+        sig = authed_request.headers[A2A_HMAC_SIGNATURE_HEADER]
+        ok, _ = verify_a2a_hmac_signature(
+            body=payload,
+            secret="test-gateway-hmac-secret",
+            timestamp=ts,
+            nonce=nonce,
+            signature=sig,
+        )
+        assert ok is True
