@@ -42,8 +42,8 @@ echo "${AGENTS_JSON}" | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
 names = [a.get("displayName", "") for a in data.get("agents", [])]
-assert "Specialist Agent B" in names, f"Specialist Agent B missing from registry: {names}"
-assert "Coordinator Agent A" in names, f"Coordinator Agent A missing from registry: {names}"
+assert any(n in names for n in ("specialist_agent_b", "Specialist Agent B")), f"specialist_agent_b missing from registry: {names}"
+assert any(n in names for n in ("coordinator_agent_a", "Coordinator Agent A")), f"coordinator_agent_a missing from registry: {names}"
 print("    Registered Agents:", ", ".join(names))
 '
 
