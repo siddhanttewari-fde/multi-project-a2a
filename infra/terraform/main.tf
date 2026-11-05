@@ -118,12 +118,19 @@ module "agent_a_host" {
 module "a2a_governance" {
   source = "./modules/a2a_governance"
 
-  region                   = var.region
-  gateway_project_id       = var.gateway_project_id
-  agent_b_project_id       = var.agent_b_project_id
-  deploy_agents            = var.deploy_agents
-  agent_a_spiffe_principal = module.agent_a_host.spiffe_principal
-  agent_b_engine_id        = module.agent_b_host.engine_id
-  agent_b_a2a_url          = module.agent_b_host.a2a_endpoint_url
-  agent_b_a2a_mtls_url     = module.agent_b_host.a2a_mtls_endpoint_url
+  region                            = var.region
+  gateway_project_id                = var.gateway_project_id
+  agent_a_project_id                = var.agent_a_project_id
+  agent_b_project_id                = var.agent_b_project_id
+  deploy_agents                     = var.deploy_agents
+  custom_org_policy_constraint_name = module.central_gateway.custom_org_policy_constraint_name
+  agent_a_spiffe_principal          = module.agent_a_host.spiffe_principal
+  agent_a_a2a_url                   = module.agent_a_host.a2a_endpoint_url
+  agent_a_a2a_mtls_url              = module.agent_a_host.a2a_mtls_endpoint_url
+  agent_a_gateway_binding_id        = module.agent_a_host.gateway_binding_id
+  agent_b_engine_id                 = module.agent_b_host.engine_id
+  agent_b_spiffe_principal          = module.agent_b_host.spiffe_principal
+  agent_b_a2a_url                   = module.agent_b_host.a2a_endpoint_url
+  agent_b_a2a_mtls_url              = module.agent_b_host.a2a_mtls_endpoint_url
+  agent_b_gateway_binding_id        = module.agent_b_host.gateway_binding_id
 }

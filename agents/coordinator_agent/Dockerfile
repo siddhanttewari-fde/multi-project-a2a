@@ -20,13 +20,15 @@ RUN if [ -n "${AGENT_GATEWAY_ROOT_CERTIFICATES}" ]; then \
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=/etc/ssl/certs/ca-certificates.crt \
+    GOOGLE_API_USE_CLIENT_CERTIFICATE=false \
+    GOOGLE_API_USE_MTLS_ENDPOINT=never \
     PYTHONUNBUFFERED=1 \
     PORT=8080
 
 COPY --from=ghcr.io/astral-sh/uv:0.6.6 /uv /uvx /bin/
 
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+COPY pyproject.toml ./
+RUN uv sync --no-dev --no-install-project --default-index https://pypi.org/simple
 
 COPY agents ./agents
 

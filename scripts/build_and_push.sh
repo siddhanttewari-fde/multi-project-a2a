@@ -60,7 +60,7 @@ build_and_push_agent() {
   local image_uri="${REGION}-docker.pkg.dev/${project_id}/agent-repo/${image_name}:${IMAGE_TAG}"
 
   local tmp_cloudbuild
-  tmp_cloudbuild="$(mktemp "${TMPDIR:-/tmp}/cloudbuild-${image_name}-XXXXXX.yaml")"
+  tmp_cloudbuild="$(mktemp "${TMPDIR:-/tmp}/cloudbuild-${image_name}.XXXXXX")"
   cat > "${tmp_cloudbuild}" <<EOF
 steps:
   - name: 'gcr.io/cloud-builders/docker'

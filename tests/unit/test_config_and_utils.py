@@ -8,6 +8,7 @@ from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 from agents.shared.config import Settings, settings
 from agents.shared.utils import (
     GoogleAdcBearerAuth,
+    RegistryRemoteA2aAgent,
     build_health_response,
     create_authenticated_httpx_client,
     get_allow_origins,
@@ -21,7 +22,7 @@ def test_settings_defaults() -> None:
     """Verify centralized Settings defaults."""
     custom_settings = Settings(_env_file=None)
     assert custom_settings.port == 8080
-    assert custom_settings.gemini_model == "gemini-2.5-flash"
+    assert custom_settings.gemini_model == "gemini-3.5-flash"
     assert custom_settings.remote_agent_b_id == "agents/specialist-agent-b"
     assert custom_settings.a2a_rpc_path == "/a2a/app"
 
@@ -74,7 +75,7 @@ def test_resolve_app_url_precedence(monkeypatch: MagicMock) -> None:
     monkeypatch.setattr(settings, "google_cloud_agent_engine_location", "us-central1")
     monkeypatch.setattr(settings, "google_cloud_agent_engine_id", "987654321")
     assert resolve_app_url() == (
-        "https://us-central1-aiplatform.googleapis.com/v1beta1"
+        "https://us-central1-aiplatform.googleapis.com/reasoningEngines/v1"
         "/projects/capstonev2-512420/locations/us-central1/reasoningEngines/987654321/api"
     )
 
@@ -131,6 +132,14 @@ def test_resolve_remote_a2a_agent_via_registry(
         call_kwargs = mock_registry_instance.get_remote_a2a_agent.call_args.kwargs
         assert call_kwargs["agent_name"] == "agents/specialist-agent-b"
         assert isinstance(call_kwargs["httpx_client"], httpx.AsyncClient)
+
+    with patch(
+        "agents.shared.utils.AgentRegistry",
+        side_effect=RuntimeError("Registry IAM propagating"),
+    ):
+        deferred = resolve_remote_a2a_agent()
+        assert isinstance(deferred, RegistryRemoteA2aAgent)
+        assert deferred.name == "specialist_agent_b"
 
 
 def test_create_authenticated_httpx_client() -> None:

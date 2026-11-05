@@ -4,6 +4,7 @@ import contextlib
 import functools
 import inspect
 import json
+import logging
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -113,7 +114,7 @@ def resolve_app_url(explicit_url: str | None = None) -> str:
         proj = settings.google_cloud_project
         engine_id = settings.google_cloud_agent_engine_id
         return (
-            f"https://{loc}-aiplatform.googleapis.com/v1beta1"
+            f"https://{loc}-aiplatform.googleapis.com/reasoningEngines/v1"
             f"/projects/{proj}/locations/{loc}/reasoningEngines/{engine_id}/api"
         )
     return f"http://{settings.host}:{settings.port}"
@@ -143,6 +144,81 @@ def _build_placeholder_agent_card(
     )
 
 
+logger = logging.getLogger(__name__)
+
+
+def _resolve_registry_agent_name(
+    registry: AgentRegistry,
+    logical_agent_id: str,
+) -> str:
+    """Resolve a logical agent ID to its Agent Registry resource name."""
+    short_id = logical_agent_id.rsplit("/", maxsplit=1)[-1]
+    list_fn = getattr(registry, "list_agents", None)
+    if callable(list_fn):
+        try:
+            payload = list_fn()
+            agents = payload.get("agents", []) if isinstance(payload, dict) else []
+            for item in agents:
+                name = str(item.get("name", ""))
+                agent_id_urn = str(item.get("agentId", ""))
+                display_name = str(item.get("displayName", ""))
+                if (
+                    name.endswith(f"/{short_id}")
+                    or agent_id_urn.endswith(f":{short_id}")
+                    or display_name == short_id
+                ):
+                    return name
+        except Exception as exc:
+            logger.debug("AgentRegistry list_agents fallback for %s: %s", short_id, exc)
+    return logical_agent_id
+
+
+class RegistryRemoteA2aAgent(RemoteA2aAgent):
+    """RemoteA2aAgent that lazily resolves its card from Project 3 AgentRegistry."""
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        description: str,
+        gateway_project_id: str,
+        region: str,
+        remote_agent_id: str,
+        httpx_client: httpx.AsyncClient,
+    ) -> None:
+        super().__init__(
+            name=name,
+            description=description,
+            agent_card=_build_placeholder_agent_card(name, description),
+            httpx_client=httpx_client,
+        )
+        self._gateway_project_id = gateway_project_id
+        self._region = region
+        self._remote_agent_id = remote_agent_id
+        self._registry_resolved = False
+
+    async def _ensure_resolved(self, ctx: Any = None) -> Any:
+        if not self._registry_resolved and self._gateway_project_id:
+            registry = AgentRegistry(
+                project_id=self._gateway_project_id,
+                location=self._region,
+            )
+            resolved_name = await run_in_threadpool(
+                _resolve_registry_agent_name,
+                registry,
+                self._remote_agent_id,
+            )
+            resolved_agent = await run_in_threadpool(
+                registry.get_remote_a2a_agent,
+                agent_name=resolved_name,
+                httpx_client=self._httpx_client,
+            )
+            if resolved_agent._agent_card is not None:
+                self._agent_card = resolved_agent._agent_card
+            self._registry_resolved = True
+        return await super()._ensure_resolved(ctx)
+
+
 def resolve_remote_a2a_agent(
     agent_name: str = "specialist_agent_b",
     description: str = (
@@ -153,14 +229,33 @@ def resolve_remote_a2a_agent(
     """Resolve Specialist Agent B exclusively via Project 3's Central Agent Registry."""
     httpx_client = create_authenticated_httpx_client()
     if settings.gateway_project_id:
-        registry = AgentRegistry(
-            project_id=settings.gateway_project_id,
-            location=settings.region,
-        )
-        return registry.get_remote_a2a_agent(
-            agent_name=settings.remote_agent_b_id,
-            httpx_client=httpx_client,
-        )
+        try:
+            registry = AgentRegistry(
+                project_id=settings.gateway_project_id,
+                location=settings.region,
+            )
+            resolved_name = _resolve_registry_agent_name(
+                registry,
+                settings.remote_agent_b_id,
+            )
+            return registry.get_remote_a2a_agent(
+                agent_name=resolved_name,
+                httpx_client=httpx_client,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Deferred AgentRegistry lookup for %s until first invocation: %s",
+                settings.remote_agent_b_id,
+                exc,
+            )
+            return RegistryRemoteA2aAgent(
+                name=agent_name,
+                description=description,
+                gateway_project_id=settings.gateway_project_id,
+                region=settings.region,
+                remote_agent_id=settings.remote_agent_b_id,
+                httpx_client=httpx_client,
+            )
 
     return RemoteA2aAgent(
         name=agent_name,

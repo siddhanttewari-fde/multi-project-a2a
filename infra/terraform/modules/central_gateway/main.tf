@@ -17,6 +17,12 @@ locals {
     { url = "https://monitoring.mtls.googleapis.com", protocolBinding = "GRPC" },
     { url = "https://agentregistry.googleapis.com", protocolBinding = "HTTP_JSON" },
     { url = "https://agentregistry.mtls.googleapis.com", protocolBinding = "HTTP_JSON" },
+    { url = "https://cloudresourcemanager.googleapis.com", protocolBinding = "HTTP_JSON" },
+    { url = "https://cloudresourcemanager.mtls.googleapis.com", protocolBinding = "HTTP_JSON" },
+    { url = "https://iamcredentials.googleapis.com", protocolBinding = "HTTP_JSON" },
+    { url = "https://iamcredentials.mtls.googleapis.com", protocolBinding = "HTTP_JSON" },
+    { url = "https://oauth2.googleapis.com", protocolBinding = "HTTP_JSON" },
+    { url = "https://iap.googleapis.com", protocolBinding = "HTTP_JSON" },
   ]
 }
 
@@ -32,12 +38,6 @@ resource "google_network_services_agent_gateway" "central_egress_gw" {
 
   google_managed {
     governed_access_path = "AGENT_TO_ANYWHERE"
-  }
-
-  network_config {
-    egress {
-      network_attachment = var.network_attachment_id
-    }
   }
 }
 
@@ -99,10 +99,22 @@ resource "google_project_iam_member" "agent_a_cross_project_gw_bind" {
   member  = "serviceAccount:service-${var.agent_a_project_number}@gcp-sa-aiplatform.iam.gserviceaccount.com"
 }
 
+resource "google_project_iam_member" "agent_a_re_cross_project_gw_bind" {
+  project = var.gateway_project_id
+  role    = google_project_iam_custom_role.ar_agw_cross_project_sa.name
+  member  = "serviceAccount:service-${var.agent_a_project_number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+}
+
 resource "google_project_iam_member" "agent_b_cross_project_gw_bind" {
   project = var.gateway_project_id
   role    = google_project_iam_custom_role.ar_agw_cross_project_sa.name
   member  = "serviceAccount:service-${var.agent_b_project_number}@gcp-sa-aiplatform.iam.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "agent_b_re_cross_project_gw_bind" {
+  project = var.gateway_project_id
+  role    = google_project_iam_custom_role.ar_agw_cross_project_sa.name
+  member  = "serviceAccount:service-${var.agent_b_project_number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
 }
 
 # 5. Control-Plane Anti-Bypass Custom Organization Policy Constraint
@@ -116,32 +128,6 @@ resource "google_org_policy_custom_constraint" "require_central_egress_gw" {
   method_types   = ["CREATE", "UPDATE"]
   resource_types = ["aiplatform.googleapis.com/ReasoningEngine"]
   condition      = "resource.spec.deploymentSpec.agentGatewayConfig.agentToAnywhereConfig.agentGateway in ['${google_network_services_agent_gateway.central_egress_gw.id}']"
-}
-
-resource "google_org_policy_policy" "enforce_egress_gw_project_a" {
-  count    = var.enforce_custom_org_policy ? 1 : 0
-  provider = google-beta
-  parent   = "projects/${var.agent_a_project_id}"
-  name     = "projects/${var.agent_a_project_id}/policies/${google_org_policy_custom_constraint.require_central_egress_gw.name}"
-
-  spec {
-    rules {
-      enforce = "TRUE"
-    }
-  }
-}
-
-resource "google_org_policy_policy" "enforce_egress_gw_project_b" {
-  count    = var.enforce_custom_org_policy ? 1 : 0
-  provider = google-beta
-  parent   = "projects/${var.agent_b_project_id}"
-  name     = "projects/${var.agent_b_project_id}/policies/${google_org_policy_custom_constraint.require_central_egress_gw.name}"
-
-  spec {
-    rules {
-      enforce = "TRUE"
-    }
-  }
 }
 
 # 6. Register Essential GCP APIs (Vertex AI, Logging, Trace, Monitoring, Agent Registry) in Project 3's Agent Registry
